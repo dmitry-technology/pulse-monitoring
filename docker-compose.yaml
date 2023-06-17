@@ -1,0 +1,155 @@
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.2
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  broker:
+    image: confluentinc/cp-kafka:7.3.2
+    container_name: broker
+    ports:
+    # To learn about configuring Kafka for access across networks see
+    # https://www.confluent.io/blog/kafka-client-cannot-connect-to-broker-on-aws-on-docker-etc/
+      - "9092:9092"
+    depends_on:
+      - zookeeper
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_INTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_INTERNAL://broker:29092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui
+    container_name: kafka-ui
+    ports:
+      - 8090:8080
+    restart: always
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=local
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=broker:29092
+      - KAFKA_CLUSTERS_0_ZOOKEEPER=zookeeper:2181
+    links:
+      - broker
+      - zookeeper
+  
+  redis:
+    image: redis
+    ports:
+      - 6379:6379
+  
+  postgres:
+    image: "postgres" # use latest official postgres version
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - '5432:5432'
+    volumes: 
+      - dbdata0:/var/lib/postgresql/data
+  
+  mongodb:
+    image: mongo:3.5
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=mongo
+      - MONGO_INITDB_ROOT_PASSWORD=12345.com
+    restart: on-failure
+    ports:
+      - '27017:27017'
+    volumes:
+      - dbdata6:/data/db
+      
+  config-server:
+    build:
+      pulse-monitoring-config-server
+    mem_limit: 200m
+    mem_reservation: 50m
+
+  pulse-analyser:
+    build:
+     pulse-analyser
+    mem_limit: 200m
+    mem_reservation: 50m
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+
+  average-populator:
+    build:
+      pulse-monitoring-average-populator
+    mem_limit: 200m
+    mem_reservation: 50m
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+
+  average-reducer:
+    build:
+      pulse-monitoring-avg-reducer
+    mem_limit: 200m
+    mem_reservation: 50m
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+
+  doctor-data-provider:
+    container_name: doctor-data-provider
+    build:
+      pulse-monitoring-doctor-data-provider
+    mem_limit: 200m
+    mem_reservation: 50m
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+
+  pulse-monitoring-gateway:
+    container_name: pulse-monitoring-gateway
+    build:
+      pulse-monitoring-gateway
+    ports:
+      - "9090:9090"
+    mem_limit: 200m
+    mem_reservation: 50m
+    environment:
+      - DATA_PROVIDER_URL=http://doctor-data-provider:8080
+      - VISITS_HOST=back-office-visits
+      - SENSORS_HOST=back-office-sensors
+
+  jumps-notifier:
+    container_name: jumps-notifier
+    build:
+      pulse-monitoring-jumps-notifier
+    mem_limit: 200m
+    mem_reservation: 50m
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - KAFKA_PASSWORD=7Iq3D6sT2aqATbIlKV7KnKQuARSUlzI2
+      - USER_NAME=devopdimach
+      - MAIL_PASSWORD=ljkjykgkaowxvpps
+      - DATA_PROVIDER_URL=http://doctor-data-provider:8080
+
+  jumps-populator:
+    container_name: jumps-populator
+    build:
+      pulse-monitoring-jumps-populator
+    mem_limit: 200m
+    mem_reservation: 50m
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+
+  back-office-sensors:
+    build:
+      pulse-monitoring-sensor-values-back-office
+    mem_limit: 200m
+    mem_reservation: 50m
+
+  back-office-visits:
+    build:
+      pulse-monitoring-visits-back-office
+    mem_limit: 200m
+    mem_reservation: 50m
+volumes:
+  dbdata0:
+    driver: local  
+  dbdata6:
